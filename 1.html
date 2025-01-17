@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI 코드 생성기</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/material.min.css">
+  <style>
+    /* Apple Design Inspired Styles */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f5f5f7;
+      color: #1d1d1f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      background-color: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1);
+      padding: 40px;
+      width: 80%;
+      max-width: 800px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    input[type="text"] {
+      width: calc(100% - 24px);
+      padding: 12px;
+      margin-bottom: 20px;
+      border: 1px solid #d1d1d6;
+      border-radius: 8px;
+      font-size: 1rem;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    textarea {
+      display: none;
+    }
+
+    .cm-s-material.CodeMirror {
+      height: 250px;
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background-color: #0070c9;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transition: background-color 0.2s ease-in-out;
+    }
+
+    button:hover {
+      background-color: #005fb3;
+    }
+
+    #result {
+      margin-top: 40px;
+      border: 1px solid #d1d1d6;
+      border-radius: 8px;
+      padding: 20px;
+      background-color: #f5f5f7;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+      overflow-wrap: break-word;
+    }
+
+    #result h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    #output-container .cm-s-material.CodeMirror {
+      height: auto;
+      font-size: 0.9rem;
+    }
+
+    #newWindowBtn {
+      margin-top: 20px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .error-message {
+      color: red;
+      margin-top: 10px;
+    }
+
+    .validation-success {
+      color: green;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>AI 코드 생성기</h1>
+    <label for="apiKey">API 키:</label>
+    <input type="text" id="apiKey" placeholder="여기에 API 키를 입력하세요">
+
+    <label for="prompt">요청:</label>
+    <textarea id="prompt" placeholder="여기에 생성 요청을 입력하세요"></textarea>
+    <div id="prompt-editor"></div>
+
+    <button id="generateBtn">생성</button>
+
+    <div id="result" class="hidden">
+      <h2>결과:</h2>
+      <div id="output-container"></div>
+      <div id="validation-result"></div>
+      <button id="newWindowBtn">새 창에서 열기</button>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/xml/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/htmlmixed/htmlmixed.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closetag.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html-validate@7.11.1/dist/browser/html-validate.js"></script>
+  <script>
+    const apiKeyInput = document.getElementById('apiKey');
+    const promptInput = document.getElementById('prompt');
+    const generateBtn = document.getElementById('generateBtn');
+    const resultDiv = document.getElementById('result');
+    const outputContainer = document.getElementById('output-container');
+    const validationResult = document.getElementById('validation-result');
+    const newWindowBtn = document.getElementById('newWindowBtn');
+
+    // CodeMirror 에디터 초기화
+    const promptEditor = CodeMirror(document.getElementById('prompt-editor'), {
+      mode: 'text',
+      theme: 'material',
+      lineNumbers: true,
+      autoCloseTags: true,
+      autoCloseBrackets: true
+    });
+
+    let outputEditor; // 생성 코드 에디터
+
+    generateBtn.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value;
+      const promptText = promptEditor.getValue();
+
+      if (!apiKey || !promptText) {
+        alert('API 키와 요청 내용을 모두 입력해주세요.');
+        return;
+      }
+
+      generateBtn.classList.add('loading');
+      resultDiv.classList.add('hidden');
+      outputContainer.innerHTML = '생성 중...';
+      validationResult.innerHTML = '';
+
+      try {
+        const generatedCode = await generateContent(apiKey, promptText);
+
+        // HTML 파서 사용
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(generatedCode, 'text/html');
+        const extractedCode = doc.documentElement.outerHTML;
+
+        // 코드 에디터 출력
+        if (!outputEditor) {
+          outputEditor = CodeMirror(outputContainer, {
+            mode: 'htmlmixed',
+            theme: 'material',
+            lineNumbers: true,
+            readOnly: true,
+            autoCloseTags: true,
+            autoCloseBrackets: true
+          });
+        }
+        outputEditor.setValue(extractedCode);
+        resultDiv.classList.remove('hidden');
+
+        // 코드 유효성 검사
+        validateCode(extractedCode);
+
+      } catch (error) {
+        console.error('Error:', error);
+        outputContainer.innerHTML = '';
+        validationResult.innerHTML = `<div class="error-message">오류가 발생했습니다: ${error.message}</div>`;
+      } finally {
+        generateBtn.classList.remove('loading');
+      }
+    });
+
+    newWindowBtn.addEventListener('click', () => {
+      const newWindow = window.open();
+      newWindow.document.write(outputEditor.getValue());
+      newWindow.document.close();
+    });
+
+    async function generateContent(apiKey, promptText) {
+      // 더 강력한 시스템 프롬프트
+      const systemPrompt = `
+        당신은 매우 정교한 HTML, CSS, JavaScript 코드 생성기입니다.
+        사용자의 요청에 따라 코드만 생성하며, 코드 외에는 어떠한 부연 설명도 하지 않습니다.
+        생성하는 코드는 HTML5 표준을 준수하며, W3C Validator를 통과할 수 있어야 합니다.
+        코드는 <html> 태그로 시작하고 </html> 태그로 끝나야 하며, <head>와 <body> 태그를 반드시 포함해야 합니다.
+        CSS는 <style> 태그 내부에, JavaScript는 <script> 태그 내부에 작성합니다.
+        외부 라이브러리나 프레임워크는 사용하지 않습니다.
+        코드는 간결하고 가독성이 높아야 하며, 불필요한 주석은 최소화합니다.
+        
+        반드시 코드만 출력해야 합니다. 코드 외에 다른 설명이나 부연 설명은 하지 마세요.
+        코드 블록을 나타내는 마크다운 기호 (```)를 사용하지 마세요.
+        오직 순수한 HTML 코드로만 응답하세요.
+
+        명심하세요, 코드 외에는 어떤 말도 하지 마세요.
+      `;
+      const fullPrompt = `${systemPrompt}\n\n${promptText}`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: fullPrompt }]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error.message || 'Gemini API 요청 실패');
+      }
+
+      const data = await response.json();
+      let generatedText = data.candidates[0].content.parts[0].text;
+
+      return generatedText;
+    }
+
+    function validateCode(htmlCode) {
+      const validator = new window.HTMLValidate();
+      const report = validator.validateString(htmlCode);
+
+      if (report.valid) {
+        validationResult.innerHTML = '<div class="validation-success">코드가 유효합니다!</div>';
+      } else {
+        let errorMessages = '';
+        for (const result of report.results) {
+          for (const message of result.messages) {
+            errorMessages += `<div class="error-message">Line ${message.line}, Col ${message.column}: ${message.message}</div>`;
+          }
+        }
+        validationResult.innerHTML = errorMessages;
+      }
+    }
+  </script>
+</body>
+</html>
